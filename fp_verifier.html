@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Brave Fingerprint Verifier</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background-color: #f4f4f4; }
+        h1 { color: #333; }
+        pre { background-color: #fff; padding: 15px; border: 1px solid #ddd; white-space: pre-wrap; word-break: break-all; }
+        .hash-changed { color: red; font-weight: bold; }
+        .hash-unchanged { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Brave Fingerprint Values</h1>
+    <p>Test Mode: <span id="mode-display"></span></p>
+    <button onclick="runTestAndDisplay('Session_1')">1. Measure Baseline (Session 1)</button>
+    <button onclick="runTestAndDisplay('Session_2')">2. Measure Latest (Session 2)</button>
+    <hr>
+    
+    <h2>Measurement Log</h2>
+    <pre id="output"></pre>
+
+    <script>
+    const log = [];
+    window.fingerprint_log = log;
+
+    // --- Canvas Fingerprint (Rendering Hash) -------------------------------------------
+    function getCanvasFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 280;
+            canvas.height = 40;
+            ctx.textBaseline = "top";
+            ctx.font = "20px 'Arial'";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(100, 1, 80, 20);
+            ctx.fillStyle = "#069";
+            ctx.fillText("Brave Farbling Test", 2, 25);
+            // Returns the last 15 chars of Base64 data (Hash)
+            return canvas.toDataURL().slice(-15);
+        } catch (e) {
+            return "Canvas_Error";
+        }
+    }
+
+    // --- Audio Fingerprint (Audio Processing Hash) --------------------------------------------
+    function getAudioFingerprint() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const analyser = audioCtx.createAnalyser();
+            oscillator.connect(analyser);
+            oscillator.start(0);
+            const buffer = new Float32Array(analyser.frequencyBinCount);
+            analyser.getFloatFrequencyData(buffer);
+            oscillator.stop(0);
+            // Summarizes the first 10 frequency bins
+            return buffer.slice(0, 10).reduce((a, b) => a + Math.round(b * 100), 0).toString();
+        } catch (e) {
+            return "Audio_Error";
+        }
+    }
+
+    // --- WebGL Fingerprint (3D Rendering Hash) --------------------------------------------
+    function getWebGLFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return "WebGL_Not_Available";
+            
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            const data = new Uint8Array(4);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+            
+            // Returns RGBA values from a single pixel
+            return data.join('_');
+        } catch (e) {
+            return "WebGL_Error";
+        }
+    }
+
+    // --- Core Logging Function ------------------------------------------------
+    function sampleFingerprint() {
+        const fp = {};
+        
+        fp.canvas_hash = getCanvasFingerprint();
+        fp.audio_hash = getAudioFingerprint(); 
+        fp.webgl_hash = getWebGLFingerprint();
+        
+        fp.hardwareConcurrency_masked = window.navigator.hardwareConcurrency;
+        fp.deviceMemory_masked = window.navigator.deviceMemory;
+
+        fp.ts = (new Date()).toISOString();
+        return fp;
+    }
+    
+    // Display and Logging function
+    function runTestAndDisplay(note) {
+        const fp = sampleFingerprint();
+        fp.note = note;
+        log.push(fp);
+        
+        let outputText = "--- Log Record ---\n";
+        
+        log.forEach((entry, index) => {
+            let status = '';
+            if (index > 0) {
+                // Compare with the previous entry
+                const prev = log[index - 1];
+                if (entry.canvas_hash !== prev.canvas_hash) {
+                    status = '<span class="hash-changed">(CHANGED!)</span>';
+                } else if (entry.canvas_hash === prev.canvas_hash) {
+                    status = '<span class="hash-unchanged">(UNCHANGED)</span>';
+                }
+            }
+
+            outputText += `\n[${index + 1}] ${entry.note} ${status}\n`;
+            outputText += `  Timestamp: ${entry.ts}\n`;
+            outputText += `  Canvas Hash: ${entry.canvas_hash}\n`;
+            outputText += `  Audio Hash: ${entry.audio_hash}\n`;
+            outputText += `  WebGL Hash: ${entry.webgl_hash}\n`;
+            outputText += `  CPU Cores: ${entry.hardwareConcurrency_masked}\n`;
+            outputText += `  RAM (GB): ${entry.deviceMemory_masked}\n`;
+        });
+        
+        document.getElementById('output').innerHTML = outputText;
+        document.getElementById('mode-display').innerText = note;
+    }
+    </script>
+
+</body>
+</html>
