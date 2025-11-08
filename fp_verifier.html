@@ -4,11 +4,26 @@
     <meta charset="UTF-8">
     <title>Brave Fingerprint Single Verifier</title>
     <style>
-        /* 画面全体のフォントを1.5倍に拡大 */
-        body { font-family: monospace; padding: 30px; background-color: #f4f4f4; font-size: 1.5em; } 
-        h1 { color: #333; font-size: 1.5em; }
-        h2 { font-size: 1.2em; }
-        button { font-size: 1em; padding: 10px 20px; margin-right: 15px; cursor: pointer; }
+        /* 文字サイズを絶対値(px)で指定し、ブラウザ設定に依存しないように修正 */
+        body { 
+            font-family: monospace; 
+            padding: 30px; 
+            background-color: #f4f4f4; 
+            font-size: 24px; /* 1.5倍に相当する24pxで固定 */
+        } 
+        h1 { 
+            color: #333; 
+            font-size: 30px; /* 見出しを少し大きく */
+        }
+        h2 { 
+            font-size: 24px; 
+        }
+        button { 
+            font-size: 18px; /* ボタン内の文字サイズ */
+            padding: 10px 20px; 
+            margin-right: 15px; 
+            cursor: pointer; 
+        }
         /* 測定結果のプレエリア */
         #output { 
             background-color: #fff; 
@@ -16,7 +31,7 @@
             border: 2px solid #ddd; 
             white-space: pre-wrap; 
             word-break: break-all;
-            font-size: 0.9em; /* ログエリアは少し小さめに */
+            font-size: 18px; /* ログエリアは少し小さめに固定 */
         } 
         .hash-changed { color: red; font-weight: bold; }
     </style>
@@ -36,7 +51,7 @@
     <script>
     const log = [];
 
-    // --- 各種フィンガープリント測定関数 (Canvas, Audio, WebGL) ---
+    // --- 各種フィンガープリント測定関数 (変更なし) ---
     function getCanvasFingerprint() {
         try {
             const canvas = document.createElement('canvas');
@@ -88,7 +103,7 @@
         }
     }
 
-    // --- 測定実行と画面表示を行う関数 ---
+    // --- 測定実行と画面表示を行う関数 (変更なし) ---
     function sampleFingerprint() {
         const fp = {};
         
@@ -104,7 +119,6 @@
     }
     
     function runTestAndDisplay(note) {
-        // ログをクリアして新しい測定結果だけを表示
         log.length = 0; 
         
         const fp = sampleFingerprint();
@@ -126,7 +140,7 @@
         document.getElementById('output').innerText = outputText;
     }
 
-    // --- コピー機能の関数 ---
+    // --- コピー機能の関数 (変更なし) ---
     function copyResults() {
         const outputText = document.getElementById('output').innerText;
         
