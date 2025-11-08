@@ -2,31 +2,41 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Brave Fingerprint Verifier</title>
+    <title>Brave Fingerprint Single Verifier</title>
     <style>
-        body { font-family: monospace; padding: 20px; background-color: #f4f4f4; }
-        h1 { color: #333; }
-        pre { background-color: #fff; padding: 15px; border: 1px solid #ddd; white-space: pre-wrap; word-break: break-all; }
+        /* 画面全体のフォントを1.5倍に拡大 */
+        body { font-family: monospace; padding: 30px; background-color: #f4f4f4; font-size: 1.5em; } 
+        h1 { color: #333; font-size: 1.5em; }
+        h2 { font-size: 1.2em; }
+        button { font-size: 1em; padding: 10px 20px; margin-right: 15px; cursor: pointer; }
+        /* 測定結果のプレエリア */
+        #output { 
+            background-color: #fff; 
+            padding: 20px; 
+            border: 2px solid #ddd; 
+            white-space: pre-wrap; 
+            word-break: break-all;
+            font-size: 0.9em; /* ログエリアは少し小さめに */
+        } 
         .hash-changed { color: red; font-weight: bold; }
-        .hash-unchanged { color: green; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h1>Brave Fingerprint Values</h1>
-    <p>Test Mode: <span id="mode-display"></span></p>
-    <button onclick="runTestAndDisplay('Session_1')">1. Measure Baseline (Session 1)</button>
-    <button onclick="runTestAndDisplay('Session_2')">2. Measure Latest (Session 2)</button>
+    <h1>Brave Fingerprint 値の単発測定</h1>
+    <p>セッションごとに値を測定し、追跡防止機能を確認します。</p>
+    
+    <button onclick="runTestAndDisplay('Single Measurement')">測定開始 (1回)</button>
+    <button onclick="copyResults()">測定結果をコピー</button>
     <hr>
     
-    <h2>Measurement Log</h2>
-    <pre id="output"></pre>
+    <h2>測定結果ログ</h2>
+    <pre id="output">測定ボタンを押してください...</pre>
 
     <script>
     const log = [];
-    window.fingerprint_log = log;
 
-    // --- Canvas Fingerprint (Rendering Hash) -------------------------------------------
+    // --- 各種フィンガープリント測定関数 (Canvas, Audio, WebGL) ---
     function getCanvasFingerprint() {
         try {
             const canvas = document.createElement('canvas');
@@ -39,14 +49,12 @@
             ctx.fillRect(100, 1, 80, 20);
             ctx.fillStyle = "#069";
             ctx.fillText("Brave Farbling Test", 2, 25);
-            // Returns the last 15 chars of Base64 data (Hash)
             return canvas.toDataURL().slice(-15);
         } catch (e) {
             return "Canvas_Error";
         }
     }
 
-    // --- Audio Fingerprint (Audio Processing Hash) --------------------------------------------
     function getAudioFingerprint() {
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -57,14 +65,12 @@
             const buffer = new Float32Array(analyser.frequencyBinCount);
             analyser.getFloatFrequencyData(buffer);
             oscillator.stop(0);
-            // Summarizes the first 10 frequency bins
             return buffer.slice(0, 10).reduce((a, b) => a + Math.round(b * 100), 0).toString();
         } catch (e) {
             return "Audio_Error";
         }
     }
 
-    // --- WebGL Fingerprint (3D Rendering Hash) --------------------------------------------
     function getWebGLFingerprint() {
         try {
             const canvas = document.createElement('canvas');
@@ -76,14 +82,13 @@
             const data = new Uint8Array(4);
             gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
             
-            // Returns RGBA values from a single pixel
             return data.join('_');
         } catch (e) {
             return "WebGL_Error";
         }
     }
 
-    // --- Core Logging Function ------------------------------------------------
+    // --- 測定実行と画面表示を行う関数 ---
     function sampleFingerprint() {
         const fp = {};
         
@@ -98,28 +103,19 @@
         return fp;
     }
     
-    // Display and Logging function
     function runTestAndDisplay(note) {
+        // ログをクリアして新しい測定結果だけを表示
+        log.length = 0; 
+        
         const fp = sampleFingerprint();
         fp.note = note;
         log.push(fp);
         
-        let outputText = "--- Log Record ---\n";
+        let outputText = "--- 測定結果 ---\n";
         
         log.forEach((entry, index) => {
-            let status = '';
-            if (index > 0) {
-                // Compare with the previous entry
-                const prev = log[index - 1];
-                if (entry.canvas_hash !== prev.canvas_hash) {
-                    status = '<span class="hash-changed">(CHANGED!)</span>';
-                } else if (entry.canvas_hash === prev.canvas_hash) {
-                    status = '<span class="hash-unchanged">(UNCHANGED)</span>';
-                }
-            }
-
-            outputText += `\n[${index + 1}] ${entry.note} ${status}\n`;
-            outputText += `  Timestamp: ${entry.ts}\n`;
+            outputText += `\n[${index + 1}] ${entry.note}\n`;
+            outputText += `  日時: ${entry.ts}\n`;
             outputText += `  Canvas Hash: ${entry.canvas_hash}\n`;
             outputText += `  Audio Hash: ${entry.audio_hash}\n`;
             outputText += `  WebGL Hash: ${entry.webgl_hash}\n`;
@@ -127,8 +123,26 @@
             outputText += `  RAM (GB): ${entry.deviceMemory_masked}\n`;
         });
         
-        document.getElementById('output').innerHTML = outputText;
-        document.getElementById('mode-display').innerText = note;
+        document.getElementById('output').innerText = outputText;
+    }
+
+    // --- コピー機能の関数 ---
+    function copyResults() {
+        const outputText = document.getElementById('output').innerText;
+        
+        if (!navigator.clipboard) {
+            alert('クリップボードAPIがサポートされていません。テキストを手動でコピーしてください。');
+            return;
+        }
+        
+        navigator.clipboard.writeText(outputText)
+            .then(() => {
+                alert('測定結果をクリップボードにコピーしました！');
+            })
+            .catch(err => {
+                console.error('コピー失敗:', err);
+                alert('コピーに失敗しました。');
+            });
     }
     </script>
 
