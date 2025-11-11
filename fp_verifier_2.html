@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Brave Farbling Verifier 2</title>
+    <style>
+        /* 文字サイズを絶対値(px)で指定し、ブラウザ設定に依存しないように修正 */
+        body {
+            font-family: monospace;
+            padding: 30px;
+            background-color: #f4f4f4;
+            font-size: 20px;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+        }
+        p {
+            font-size: 18px;
+        }
+        button {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin-right: 15px;
+            cursor: pointer;
+        }
+        /* 測定結果のプレエリア */
+        #output {
+            background-color: #fff;
+            padding: 20px;
+            border: 2px solid #ddd;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 16px; /* ログエリアのフォントサイズを16pxに固定 */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Brave Farbling Verifier 2 (差異検出強化版)</h1>
+    <p>CanvasとAudioの測定ロジックを強化し、ブラウザ間の微細な差異を検出します。</p>
+
+    <button onclick="runTestAndDisplay('Single Measurement')">測定開始 (1回)</button>
+    <button onclick="copyResults()">測定結果をコピー</button>
+    <hr>
+
+    <h2>測定結果ログ</h2>
+    <pre id="output">測定ボタンを押してください...</pre>
+
+    <script>
+    const log = [];
+
+    // --- 修正版：Canvas Hash 測定関数 ---
+    function getCanvasFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 300; 
+            canvas.height = 50; 
+            ctx.textBaseline = "top";
+            
+            // 複雑なフォント設定：フォントと絵文字を混ぜる (差異誘発)
+            ctx.font = "24px 'Arial', sans-serif"; 
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(100, 1, 80, 20);
+            
+            // シャドウ設定を追加 (グラフィック処理の差異を誘発)
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+            
+            ctx.fillStyle = "#069";
+            // 絵文字を混ぜて描画
+            ctx.fillText("Brave Farbling Test 🚀", 2, 28); 
+            
+            // シャドウをクリアして別の描画
+            ctx.shadowBlur = 0; 
+            ctx.fillStyle = "#333";
+            ctx.font = "16px monospace";
+            ctx.fillText("canvas", 5, 5);
+
+            // 描画結果全体をハッシュとして使用
+            return canvas.toDataURL("image/png").slice(-25); 
+        } catch (e) {
+            return "Canvas_Error";
+        }
+    }
+
+    // --- 修正版：Audio Hash 測定関数 ---
+    function getAudioFingerprint() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+            const oscillator = audioCtx.createOscillator();
+            const analyser = audioCtx.createAnalyser();
+            
+            // 設定を細かく調整
+            analyser.fftSize = 2048; 
+            analyser.smoothingTimeConstant = 0.5;
+
+            oscillator.connect(analyser);
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); 
+            
+            // 音声を短時間処理させる
+            oscillator.start(0);
+            const buffer = new Float32Array(analyser.frequencyBinCount);
+            
+            // 処理時間を設けるため、即座にデータを取得
+            analyser.getFloatFrequencyData(buffer);
+            oscillator.stop(0);
+            
+            // 小数点以下の差異を拾うように集計方法を変更 (丸め込みを回避)
+            const sum = buffer.slice(0, 50).reduce((a, b) => a + b, 0); 
+            
+            // 結果をtoFixed(12)で小数点以下まで含めて文字列化し、ユニーク性を高める
+            return sum.toFixed(12); 
+        } catch (e) {
+            return "Audio_Error";
+        }
+    }
+    
+    // --- WebGL Hash 測定関数（変更なし） ---
+    function getWebGLFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return "WebGL_Not_Available";
+            
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            const data = new Uint8Array(4);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+            
+            return data.join('_');
+        } catch (e) {
+            return "WebGL_Error";
+        }
+    }
+
+    // --- 測定実行と画面表示を行う関数（変更なし） ---
+    function sampleFingerprint() {
+        const fp = {};
+        
+        fp.canvas_hash = getCanvasFingerprint();
+        fp.audio_hash = getAudioFingerprint(); 
+        fp.webgl_hash = getWebGLFingerprint();
+        
+        // ハードウェア情報の取得は変更なし
+        fp.hardwareConcurrency_masked = window.navigator.hardwareConcurrency;
+        fp.deviceMemory_masked = window.navigator.deviceMemory;
+
+        fp.ts = (new Date()).toISOString();
+        return fp;
+    }
+    
+    function runTestAndDisplay(note) {
+        log.length = 0; 
+        
+        const fp = sampleFingerprint();
+        fp.note = note;
+        log.push(fp);
+        
+        let outputText = `--- ${document.title} ---`;
+        
+        log.forEach((entry, index) => {
+            outputText += `\n\n[${index + 1}] ${entry.note}\n`;
+            outputText += `  日時: ${entry.ts}\n`;
+            outputText += `  Canvas Hash: ${entry.canvas_hash}\n`;
+            outputText += `  Audio Hash: ${entry.audio_hash}\n`;
+            outputText += `  WebGL Hash: ${entry.webgl_hash}\n`;
+            outputText += `  CPU Cores: ${entry.hardwareConcurrency_masked}\n`;
+            outputText += `  RAM (GB): ${entry.deviceMemory_masked}\n`;
+        });
+        
+        document.getElementById('output').innerText = outputText;
+    }
+
+    // --- コピー機能の関数（変更なし） ---
+    function copyResults() {
+        const outputText = document.getElementById('output').innerText;
+        
+        if (!navigator.clipboard) {
+            alert('クリップボードAPIがサポートされていません。テキストを手動でコピーしてください。');
+            return;
+        }
+        
+        navigator.clipboard.writeText(outputText)
+            .then(() => {
+                alert('測定結果をクリップボードにコピーしました！');
+            })
+            .catch(err => {
+                console.error('コピー失敗:', err);
+                alert('コピーに失敗しました。');
+            });
+    }
+    </script>
+
+</body>
+</html>
