@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <title>Brave Farbling Verifier 3</title>
+    <style>
+        /* ユーザー指定通り、文字サイズは変更しない（元のhtml font-sizeを維持） */
+        html { font-size: 150%; } /* 既存の設定を保持 */
+
+        body {
+            font-family: monospace;
+            padding: 30px;
+            background-color: #f4f4f4;
+            font-size: 1rem;
+        }
+        h1 { color: #333; font-size: 1.4rem; }
+        p { font-size: 0.9rem; }
+        button {
+            font-size: 0.75rem;
+            padding: 10px 20px;
+            margin-right: 15px;
+            cursor: pointer;
+        }
+        #output {
+            background-color: #fff;
+            padding: 20px;
+            border: 2px solid #ddd;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 0.8rem;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Brave Farbling Verifier 3 (改良版)</h1>
+    <p>Canvas / Audio / WebGL をより確実にハッシュ化して、Farbling の変化を検出します。文字サイズは変更していません。</p>
+
+    <button id="run1">測定開始 (1回)</button>
+    <button id="run3">測定開始 (3回連続)</button>
+    <button id="copy">測定結果をコピー</button>
+    <hr>
+
+    <h2>測定結果ログ</h2>
+    <pre id="output">測定ボタンを押してください...</pre>
+
+    <script>
+    // ヘルパ: ArrayBuffer -> hex
+    function bufToHex(buffer) {
+        const hex = Array.from(new Uint8Array(buffer))
+            .map(b => b.toString(16).padStart(2,'0'))
+            .join('');
+        return hex;
+    }
+
+    // --- Canvas: getImageData を SHA-256 でハッシュ化 ---
+    async function getCanvasFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            // 少し高さを増やして、複数描画を確保
+            canvas.width = 600;
+            canvas.height = 120;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+
+            ctx.textBaseline = "top";
+            ctx.font = "24px 'Arial', sans-serif";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(100, 1, 160, 40);
+
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+
+            ctx.fillStyle = "#069";
+            ctx.fillText("Brave Farbling Test 🚀 - Verifier 3", 10, 28);
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#333";
+            ctx.font = "16px monospace";
+            ctx.fillText("canvas", 5, 5);
+
+            // 生ピクセルデータを取得（圧縮による揺らぎを排除）
+            const img = ctx.getImageData(0,0, canvas.width, canvas.height);
+            // イメージデータのバイト列を直接ハッシュ
+            const hashBuf = await crypto.subtle.digest('SHA-256', img.data.buffer);
+            return bufToHex(hashBuf);
+        } catch (e) {
+            console.error('Canvas error', e);
+            return "Canvas_Error";
+        }
+    }
+
+    // --- Audio: AnalyserNode から複数フレームを取得して結合し SHA-256 ---
+    async function getAudioFingerprint() {
+        try {
+            // 安定化のため resume を確実に試みる
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return "Audio_Not_Available";
+
+            const audioCtx = new Ctx({ sampleRate: 44100 });
+            await (audioCtx.state === 'running' ? Promise.resolve() :
+                   (audioCtx.resume ? audioCtx.resume() : Promise.resolve()));
+
+            const oscillator = audioCtx.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.5;
+
+            oscillator.connect(analyser);
+            oscillator.start();
+
+            // 時間領域データを複数回取得（即座に1回では安定しない可能性あり）
+            const frames = 4;
+            const collected = new Float32Array(analyser.fftSize * frames);
+            const tmp = new Float32Array(analyser.fftSize);
+            for (let i=0;i<frames;i++){
+                analyser.getFloatTimeDomainData(tmp);
+                collected.set(tmp, i * analyser.fftSize);
+                // 短いウェイト（UI をブロックしない程度）
+                await new Promise(r => setTimeout(r, 10));
+            }
+
+            oscillator.stop();
+            audioCtx.close();
+
+            // Float32Array のバイト列をハッシュ
+            const hashBuf = await crypto.subtle.digest('SHA-256', collected.buffer);
+            return bufToHex(hashBuf);
+        } catch (e) {
+            console.error('Audio error', e);
+            return "Audio_Error";
+        }
+    }
+
+    // --- WebGL: 複数ピクセル + getParameter を結合して SHA-256 ---
+    async function getWebGLFingerprint() {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return "WebGL_Not_Available";
+
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // readPixels 数カ所
+            const pixels = new Uint8Array(4 * 9); // 9 ピクセル分
+            const coords = [
+                [0,0],[1,1],[2,2],[3,3],[4,4],[5,5],[6,6],[7,7],[8,8]
+            ];
+            let offset = 0;
+            for (const [x,y] of coords) {
+                const tmp = new Uint8Array(4);
+                try {
+                    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, tmp);
+                } catch(e) {
+                    // readPixels が失敗する環境がある
+                }
+                pixels.set(tmp, offset);
+                offset += 4;
+            }
+
+            // 主要な getParameter 情報も取得
+            const params = [
+                gl.getParameter(gl.VENDOR),
+                gl.getParameter(gl.RENDERER),
+                gl.getParameter(gl.VERSION),
+                gl.getParameter(gl.SHADING_LANGUAGE_VERSION)
+            ].map(v => (v || '').toString()).join('|');
+
+            // パラメータ文字列とピクセルバイト列を結合してハッシュ
+            const enc = new TextEncoder();
+            const paramsBuf = enc.encode(params);
+
+            // combine buffers
+            const combined = new Uint8Array(paramsBuf.byteLength + pixels.byteLength);
+            combined.set(new Uint8Array(paramsBuf), 0);
+            combined.set(pixels, paramsBuf.byteLength);
+
+            const hashBuf = await crypto.subtle.digest('SHA-256', combined.buffer);
+            return bufToHex(hashBuf);
+        } catch (e) {
+            console.error('WebGL error', e);
+            return "WebGL_Error";
+        }
+    }
+
+    // --- 実行／表示ロジック（非同期対応） ---
+    async function sampleFingerprint() {
+        const fp = {};
+        fp.ts = (new Date()).toISOString();
+
+        // 並列実行して高速化（ただしブラウザが同時に処理するため順序は不定）
+        const [canvasH, audioH, webglH] = await Promise.all([
+            getCanvasFingerprint(),
+            getAudioFingerprint(),
+            getWebGLFingerprint()
+        ]);
+
+        fp.canvas_hash = canvasH;
+        fp.audio_hash = audioH;
+        fp.webgl_hash = webglH;
+        fp.hardwareConcurrency_masked = window.navigator.hardwareConcurrency || 'unknown';
+        fp.deviceMemory_masked = window.navigator.deviceMemory || 'unknown';
+        return fp;
+    }
+
+    // ログ管理
+    const log = [];
+    const outputEl = document.getElementById('output');
+
+    async function runTestAndDisplay(note, repeats=1, delayMs=150) {
+        log.length = 0;
+        for (let i=0;i<repeats;i++){
+            const fp = await sampleFingerprint();
+            fp.note = repeats===1 ? note : `${note} (${i+1}/${repeats})`;
+            log.push(fp);
+            // 軽い遅延
+            if (i < repeats-1) await new Promise(r => setTimeout(r, delayMs));
+        }
+        renderOutput();
+    }
+
+    function renderOutput() {
+        let outputText = `--- ${document.title} ---`;
+        log.forEach((entry, index) => {
+            outputText += `\n\n[${index + 1}] ${entry.note}\n`;
+            outputText += `  日時: ${entry.ts}\n`;
+            outputText += `  Canvas SHA-256: ${entry.canvas_hash}\n`;
+            outputText += `  Audio SHA-256: ${entry.audio_hash}\n`;
+            outputText += `  WebGL SHA-256: ${entry.webgl_hash}\n`;
+            outputText += `  CPU Cores: ${entry.hardwareConcurrency_masked}\n`;
+            outputText += `  RAM (GB): ${entry.deviceMemory_masked}\n`;
+        });
+        outputEl.innerText = outputText;
+    }
+
+    document.getElementById('run1').addEventListener('click', () => runTestAndDisplay('Single Measurement', 1));
+    document.getElementById('run3').addEventListener('click', () => runTestAndDisplay('Triple Measurement', 3, 250));
+    document.getElementById('copy').addEventListener('click', async () => {
+        const text = outputEl.innerText;
+        if (!navigator.clipboard) {
+            alert('クリップボードAPIがサポートされていません。手動でコピーしてください。');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            alert('測定結果をクリップボードにコピーしました！');
+        } catch (e) {
+            console.error('コピー失敗', e);
+            alert('コピーに失敗しました。');
+        }
+    });
+    </script>
+</body>
+</html>
