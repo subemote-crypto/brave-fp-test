@@ -4,22 +4,26 @@
     <meta charset="UTF-8">
     <title>Brave Farbling Verifier 2</title>
     <style>
-        /* 文字サイズを絶対値(px)で指定し、ブラウザ設定に依存しないように修正 */
+        /* ↓↓↓ ルート要素のサイズを拡大し、すべてのremの基準を約24pxにする ↓↓↓ */
+        html {
+            font-size: 150%; /* 通常のブラウザのデフォルト16pxの1.5倍 (24px) */
+        }
+        
         body {
             font-family: monospace;
             padding: 30px;
             background-color: #f4f4f4;
-            font-size: 20px;
+            font-size: 1rem; /* htmlのサイズ(24px)を継承 */
         }
         h1 {
             color: #333;
-            font-size: 28px;
+            font-size: 1.4rem; /* 28pxの約1.2倍 */
         }
         p {
-            font-size: 18px;
+            font-size: 0.9rem; /* 18pxの約1.2倍 */
         }
         button {
-            font-size: 18px;
+            font-size: 0.75rem; /* 18pxの約1.2倍 */
             padding: 10px 20px;
             margin-right: 15px;
             cursor: pointer;
@@ -31,12 +35,11 @@
             border: 2px solid #ddd;
             white-space: pre-wrap;
             word-break: break-all;
-            font-size: 16px; /* ログエリアのフォントサイズを16pxに固定 */
+            font-size: 0.8rem; /* 16pxの約1.2倍 */
             
-            /* ↓↓↓ AndroidのBraveでの文字の異常拡大を防ぐ修正 ↓↓↓ */
+            /* AndroidのBraveでの文字の異常拡大を防ぐ修正 */
             -webkit-text-size-adjust: 100%; 
             text-size-adjust: 100%;        
-            /* ↑↑↑ 修正ここまで ↑↑↑ */
         }
     </style>
 </head>
